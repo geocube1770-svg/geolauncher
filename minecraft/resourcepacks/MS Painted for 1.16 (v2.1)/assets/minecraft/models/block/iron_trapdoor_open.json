@@ -1,8 +1,0 @@
-{
-  "parent": "minecraft:block/template_trapdoor_open",
-  "textures": {
-    "ends": "minecraft:block/iron_trapdoor",
-    "particle": "minecraft:block/iron_trapdoor",
-    "sides": "minecraft:block/iron_trapdoor_sides"
-  }
-}

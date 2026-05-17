@@ -1,8 +1,0 @@
-{
-	"credit": "Created by Stridey",
-	"parent": "block/fence_side",
-	"textures": {
-		"fence_side": "block/warped_fence",
-		"particle": "block/stripped_warped_log"
-	}
-}

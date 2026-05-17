@@ -1,9 +1,0 @@
-{
-	"parent": "block/template_block_15pxl",
-	"textures": {
-		"top": "block/farmland_moist",
-		"side": "block/farmland_side_moist",
-		"bottom": "block/dirt_moist",
-		"particle": "block/dirt_moist"
-	}
-}

@@ -1,8 +1,0 @@
-{
-	"credit": "Created by Stridey",
-	"parent": "block/block",
-	"textures": {
-		"stem": "block/small_dripleaf_stem_bottom",
-		"particle": "block/big_dripleaf_stem"
-	}
-}
