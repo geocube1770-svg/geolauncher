@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+venv/
+minecraft/
+logs/
+profiles/
+_tmp_mrpack/
+config.json
+profiles.json
+__pycache__/
+*.pyc
