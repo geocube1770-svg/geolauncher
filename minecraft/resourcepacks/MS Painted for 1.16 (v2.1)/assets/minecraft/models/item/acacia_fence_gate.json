@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/fence_gate",
+  "textures": {
+    "texture": "minecraft:block/acacia_fence_gate"
+  }
+}

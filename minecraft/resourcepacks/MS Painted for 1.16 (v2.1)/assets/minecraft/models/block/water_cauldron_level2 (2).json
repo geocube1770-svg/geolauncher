@@ -1,0 +1,60 @@
+{
+	"credit": "Created by Stridey",
+	"ambientocclusion": false,
+	"textures": {
+		"top": "block/cauldron_top",
+		"particle": "block/cauldron_side",
+		"side": "block/cauldron_side",
+		"inside": "block/cauldron_inner",
+		"water": "block/cauldron_water"
+	},
+	"elements": [
+		{
+			"name": "outer",
+			"from": [0, 3, 0],
+			"to": [16, 16, 16],
+			"faces": {
+				"north": {"uv": [0, 0, 16, 13], "texture": "#side"},
+				"east": {"uv": [0, 0, 16, 13], "texture": "#side"},
+				"south": {"uv": [0, 0, 16, 13], "texture": "#side"},
+				"west": {"uv": [0, 0, 16, 13], "texture": "#side"},
+				"up": {"uv": [0, 0, 16, 16], "texture": "#top"},
+				"down": {"uv": [0, 0, 16, 16], "texture": "#inside"}
+			}
+		},
+		{
+			"name": "inner",
+			"from": [2, 12, 14],
+			"to": [14, 16, 2],
+			"faces": {
+				"north": {"uv": [2, 0, 14, 4], "texture": "#side"},
+				"east": {"uv": [2, 0, 14, 4], "texture": "#side"},
+				"south": {"uv": [2, 0, 14, 4], "texture": "#side"},
+				"west": {"uv": [2, 0, 14, 4], "texture": "#side"},
+				"down": {"uv": [2, 2, 14, 14], "texture": "#water"}
+			}
+		},
+		{
+			"name": "legs outer",
+			"from": [0, 0, 0],
+			"to": [16, 3, 16],
+			"faces": {
+				"north": {"uv": [0, 13, 16, 16], "texture": "#side"},
+				"east": {"uv": [0, 13, 16, 16], "texture": "#side"},
+				"south": {"uv": [0, 13, 16, 16], "texture": "#side"},
+				"west": {"uv": [0, 13, 16, 16], "texture": "#side"}
+			}
+		},
+		{
+			"name": "legs inner",
+			"from": [16, 0, 0],
+			"to": [0, 3, 16],
+			"faces": {
+				"north": {"uv": [0, 13, 16, 16], "texture": "#side"},
+				"east": {"uv": [0, 13, 16, 16], "texture": "#side"},
+				"south": {"uv": [0, 13, 16, 16], "texture": "#side"},
+				"west": {"uv": [0, 13, 16, 16], "texture": "#side"}
+			}
+		}
+	]
+}

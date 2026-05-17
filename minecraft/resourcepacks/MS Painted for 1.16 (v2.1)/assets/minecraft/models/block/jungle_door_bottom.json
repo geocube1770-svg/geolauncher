@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/door_bottom",
+  "textures": {
+	"sides": "minecraft:block/jungle_door_sides",
+    "bottom": "minecraft:block/jungle_door_bottom"
+  }
+}
