@@ -930,11 +930,12 @@ class BrowsePanel(QFrame):
             return
 
         answer = QMessageBox.question(
-                    self,
-                    "Install dependencies?",
-                    f"{title} has required dependencies:\n\n{dep_text}\n\nInstall them too?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
+            self,
+            "Delete Mod",
+            f"Delete this mod?\n\n{filename}",
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+        )
 
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -1069,12 +1070,12 @@ class ModsBrowsePanel(BrowsePanel):
             version_ids_to_download = [main_version_id]
 
             if dependency_version_ids:
-                dep_text = "\\n".join(f"- {name}" for name in dependency_names)
+                dep_text = "\n".join(f"- {name}" for name in dependency_names)
 
                 answer = QMessageBox.question(
                     self,
                     "Install dependencies?",
-                    f"{title} has required dependencies:\\n\\n{dep_text}\\n\\nInstall them too?",
+                    f"{title} has required dependencies:\n\n{dep_text}\n\nInstall them too?",
                     QMessageBox.StandardButton.Yes
                     | QMessageBox.StandardButton.No
                 )
