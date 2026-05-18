@@ -226,3 +226,8 @@ config.json
 profiles.json
 __pycache__/
 *.pyc
+
+auth_config.json
+auth.json
+accounts.json
+tokens.json
