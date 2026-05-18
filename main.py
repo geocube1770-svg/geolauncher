@@ -119,7 +119,10 @@ class InstallThread(QThread):
                     callback=callback
                 )
 
-                launch_version = forge_version
+                # minecraft-launcher-lib returns Forge as e.g. "1.20.1-47.4.5",
+                # but the installed version folder is usually "1.20.1-forge-47.4.5".
+                forge_build = forge_version.split("-", 1)[1]
+                launch_version = f"{self.version}-forge-{forge_build}"
 
             command = minecraft_launcher_lib.command.get_minecraft_command(
                 launch_version,
@@ -137,20 +140,21 @@ class ModrinthSearchThread(QThread):
     results = pyqtSignal(list)
     error = pyqtSignal(str)
 
-    def __init__(self, query, project_type, version, loader, sort_index):
+    def __init__(self, query, project_type, version, loader, sort_index, limit):
         super().__init__()
         self.query = query
         self.project_type = project_type
         self.version = version
         self.loader = loader
         self.sort_index = sort_index
+        self.limit = limit
 
     def run(self):
         try:
             sort_map = {
-                0: "downloads",
-                1: "follows",
-                2: "newest",
+                0: "relevance",
+                1: "downloads",
+                2: "follows",
                 3: "updated"
             }
 
@@ -161,14 +165,14 @@ class ModrinthSearchThread(QThread):
 
             if (
                 self.loader
-                and self.loader != "vanilla"
+                and self.loader not in ("vanilla", "")
                 and self.project_type == "mod"
             ):
                 facets.append([f"categories:{self.loader}"])
 
             params = {
-                "limit": 20,
-                "index": sort_map.get(self.sort_index, "downloads"),
+                "limit": self.limit,
+                "index": sort_map.get(self.sort_index, "relevance"),
                 "facets": json.dumps(facets),
             }
 
@@ -270,6 +274,84 @@ class DownloadFileThread(QThread):
                         self.progress.emit(downloaded, total)
 
             self.finished.emit(dest)
+
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class DownloadMultipleModsThread(QThread):
+    status = pyqtSignal(str)
+    progress = pyqtSignal(int, int)
+    finished = pyqtSignal(list)
+    error = pyqtSignal(str)
+
+    def __init__(self, version_ids, dest_folder):
+        super().__init__()
+        self.version_ids = version_ids
+        self.dest_folder = dest_folder
+
+    def run(self):
+        downloaded_files = []
+
+        try:
+            pathlib.Path(self.dest_folder).mkdir(parents=True, exist_ok=True)
+            total_files = len(self.version_ids)
+
+            for index, version_id in enumerate(self.version_ids):
+                self.status.emit(f"Fetching file {index + 1}/{total_files}...")
+
+                response = requests.get(
+                    f"{MODRINTH_API}/version/{version_id}",
+                    headers={"User-Agent": UA},
+                    timeout=10
+                )
+
+                response.raise_for_status()
+                version_data = response.json()
+                files = version_data.get("files", [])
+
+                if not files:
+                    continue
+
+                primary = next(
+                    (file for file in files if file.get("primary")),
+                    files[0]
+                )
+
+                url = primary["url"]
+                filename = primary["filename"]
+                dest = os.path.join(self.dest_folder, filename)
+
+                self.status.emit(f"Downloading {filename}...")
+
+                with requests.get(
+                    url,
+                    stream=True,
+                    timeout=120,
+                    headers={"User-Agent": UA}
+                ) as download_response:
+                    download_response.raise_for_status()
+
+                    total = int(download_response.headers.get("content-length", 0))
+                    downloaded = 0
+
+                    with open(dest, "wb") as file:
+                        for chunk in download_response.iter_content(chunk_size=65536):
+                            if not chunk:
+                                continue
+
+                            file.write(chunk)
+                            downloaded += len(chunk)
+
+                            if total:
+                                overall_done = int(
+                                    ((index + downloaded / total) / total_files) * 100
+                                )
+                                self.progress.emit(overall_done, 100)
+
+                downloaded_files.append(dest)
+
+            self.finished.emit(downloaded_files)
 
         except Exception as e:
             self.error.emit(str(e))
@@ -463,7 +545,7 @@ class BrowsePanel(QFrame):
         self.icon_threads = []
 
         root = QVBoxLayout(self)
-        root.setSpacing(10)
+        root.setSpacing(8)
         root.setContentsMargins(28, 22, 28, 22)
 
         title_text = "Mods" if project_type == "mod" else "Modpack Downloader"
@@ -478,6 +560,7 @@ class BrowsePanel(QFrame):
         self.profile_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(self.profile_label)
 
+        # Main search row: search, sort, view count, search button
         controls = QHBoxLayout()
         controls.setSpacing(8)
 
@@ -494,14 +577,22 @@ class BrowsePanel(QFrame):
 
         self.sort_combo = QComboBox()
         self.sort_combo.addItems([
+            "Relevance",
             "Most Downloaded",
             "Most Followed",
-            "Newest",
             "Recently Updated"
         ])
-        self.sort_combo.setFixedWidth(188)
+        self.sort_combo.setFixedWidth(170)
         self.sort_combo.currentIndexChanged.connect(self.do_search)
-        controls.addWidget(self.sort_combo, 1)
+        controls.addWidget(self.sort_combo)
+
+        controls.addWidget(QLabel("View:"))
+
+        self.view_combo = QComboBox()
+        self.view_combo.addItems(["20", "30", "50"])
+        self.view_combo.setFixedWidth(75)
+        self.view_combo.currentIndexChanged.connect(self.do_search)
+        controls.addWidget(self.view_combo)
 
         search_btn = QPushButton("Search")
         search_btn.setFixedWidth(85)
@@ -509,6 +600,49 @@ class BrowsePanel(QFrame):
         controls.addWidget(search_btn)
 
         root.addLayout(controls)
+
+        # Separate filter row, like Modrinth's right-side filters but compact
+        filters_row = QHBoxLayout()
+        filters_row.setSpacing(8)
+
+        filters_row.addWidget(QLabel("Game Version:"))
+
+        self.version_filter_combo = QComboBox()
+        self.version_filter_combo.addItem("Profile Version")
+        self.version_filter_combo.addItem("All Versions")
+        self.version_filter_combo.addItems([
+            "1.21.6",
+            "1.21.5",
+            "1.21.4",
+            "1.21.3",
+            "1.21.2",
+            "1.21.1",
+            "1.21",
+            "1.20.6",
+            "1.20.4",
+            "1.20.1",
+            "1.19.4",
+            "1.18.2",
+            "1.16.5"
+        ])
+        self.version_filter_combo.currentIndexChanged.connect(self.do_search)
+        filters_row.addWidget(self.version_filter_combo, 1)
+
+        filters_row.addWidget(QLabel("Loader:"))
+
+        self.loader_filter_combo = QComboBox()
+        self.loader_filter_combo.addItems([
+            "Profile Loader",
+            "Any Loader",
+            "fabric",
+            "forge",
+            "quilt",
+            "neoforge"
+        ])
+        self.loader_filter_combo.currentIndexChanged.connect(self.do_search)
+        filters_row.addWidget(self.loader_filter_combo, 1)
+
+        root.addLayout(filters_row)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -523,7 +657,7 @@ class BrowsePanel(QFrame):
         self.vbox.addStretch()
 
         self.scroll.setWidget(self.container)
-        root.addWidget(self.scroll)
+        root.addWidget(self.scroll, 4)
 
         self.status_label = QLabel("Loading popular content...")
         self.status_label.setObjectName("status")
@@ -543,9 +677,12 @@ class BrowsePanel(QFrame):
 
             self.installed_mods_list = QListWidget()
             self.installed_mods_list.setObjectName("profilesList")
-            root.addWidget(self.installed_mods_list)
+            self.installed_mods_list.setMinimumHeight(90)
+            self.installed_mods_list.setMaximumHeight(125)
+            root.addWidget(self.installed_mods_list, 1)
 
             installed_buttons = QHBoxLayout()
+            installed_buttons.setSpacing(8)
 
             refresh_btn = QPushButton("Refresh")
             refresh_btn.clicked.connect(self.refresh_installed_mods)
@@ -595,8 +732,23 @@ class BrowsePanel(QFrame):
             {}
         )
 
-        version = profile_data.get("version", "")
-        loader = profile_data.get("loader", "vanilla")
+        view_limit = int(self.view_combo.currentText())
+
+        selected_version = self.version_filter_combo.currentText()
+        if selected_version == "Profile Version":
+            version = profile_data.get("version", "")
+        elif selected_version == "All Versions":
+            version = ""
+        else:
+            version = selected_version
+
+        selected_loader = self.loader_filter_combo.currentText().lower()
+        if selected_loader == "profile loader":
+            loader = profile_data.get("loader", "vanilla")
+        elif selected_loader == "any loader":
+            loader = ""
+        else:
+            loader = selected_loader
 
         if self.project_type == "modpack":
             loader = ""
@@ -616,7 +768,8 @@ class BrowsePanel(QFrame):
             self.project_type,
             version,
             loader,
-            self.sort_combo.currentIndex()
+            self.sort_combo.currentIndex(),
+            view_limit
         )
 
         self.search_thread.results.connect(self._on_results)
@@ -649,14 +802,17 @@ class BrowsePanel(QFrame):
 
         query = self.search_input.text().strip()
         sort_text = self.sort_combo.currentText()
+        view_count = self.view_combo.currentText()
+        version_text = self.version_filter_combo.currentText()
+        loader_text = self.loader_filter_combo.currentText()
 
         if query:
             self.status_label.setText(
-                f"{len(hits)} result(s) for '{query}' — {sort_text}"
+                f"{len(hits)} result(s) for '{query}' — {sort_text} — View {view_count}"
             )
         else:
             self.status_label.setText(
-                f"Top {len(hits)} popular — {sort_text}"
+                f"Top {len(hits)} popular — {sort_text} — {version_text} — {loader_text}"
             )
 
     def _on_icon(self, row, data):
@@ -774,12 +930,11 @@ class BrowsePanel(QFrame):
             return
 
         answer = QMessageBox.question(
-            self,
-            "Delete Mod",
-            f"Delete this mod?\n\n{filename}",
-            QMessageBox.StandardButton.Yes
-            | QMessageBox.StandardButton.No
-        )
+                    self,
+                    "Install dependencies?",
+                    f"{title} has required dependencies:\n\n{dep_text}\n\nInstall them too?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
 
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -839,11 +994,14 @@ class ModsBrowsePanel(BrowsePanel):
 
         QApplication.processEvents()
 
+        selected_card = None
+
         for i in range(self.vbox.count() - 1):
             widget = self.vbox.itemAt(i).widget()
 
             if widget and widget.project.get("slug") == slug:
-                widget.set_status("Downloading...")
+                selected_card = widget
+                widget.set_status("Checking...")
                 break
 
         try:
@@ -864,34 +1022,105 @@ class ModsBrowsePanel(BrowsePanel):
                 self.status_label.setText(
                     f"No {loader} {version} file for {title}."
                 )
+
+                if selected_card:
+                    selected_card.reset_button("⬇ Download")
+
                 return
 
-            version_id = versions[0]["id"]
+            main_version = versions[0]
+            main_version_id = main_version["id"]
+
+            required_dependencies = [
+                dep for dep in main_version.get("dependencies", [])
+                if dep.get("dependency_type") == "required"
+            ]
+
+            dependency_version_ids = []
+            dependency_names = []
+
+            for dependency in required_dependencies:
+                dep_version_id = dependency.get("version_id")
+                dep_project_id = dependency.get("project_id")
+
+                if dep_version_id:
+                    dependency_version_ids.append(dep_version_id)
+                    dependency_names.append(dep_project_id or dep_version_id)
+                    continue
+
+                if dep_project_id:
+                    dep_response = requests.get(
+                        f"{MODRINTH_API}/project/{dep_project_id}/version",
+                        params={
+                            "loaders": json.dumps([loader]),
+                            "game_versions": json.dumps([version])
+                        },
+                        headers={"User-Agent": UA},
+                        timeout=10
+                    )
+
+                    dep_response.raise_for_status()
+                    dep_versions = dep_response.json()
+
+                    if dep_versions:
+                        dependency_version_ids.append(dep_versions[0]["id"])
+                        dependency_names.append(dep_project_id)
+
+            version_ids_to_download = [main_version_id]
+
+            if dependency_version_ids:
+                dep_text = "\\n".join(f"- {name}" for name in dependency_names)
+
+                answer = QMessageBox.question(
+                    self,
+                    "Install dependencies?",
+                    f"{title} has required dependencies:\\n\\n{dep_text}\\n\\nInstall them too?",
+                    QMessageBox.StandardButton.Yes
+                    | QMessageBox.StandardButton.No
+                )
+
+                if answer == QMessageBox.StandardButton.Yes:
+                    version_ids_to_download.extend(dependency_version_ids)
+
+            if selected_card:
+                selected_card.set_status("Downloading...")
+
+            self._dl_thread = DownloadMultipleModsThread(
+                version_ids_to_download,
+                mods_dir
+            )
+
+            self._dl_thread.status.connect(self.status_label.setText)
+            self._dl_thread.progress.connect(
+                lambda done, total: self.dl_progress.setValue(
+                    int(done / total * 100) if total else 0
+                )
+            )
+            self._dl_thread.finished.connect(self._done)
+            self._dl_thread.error.connect(
+                lambda e: self.status_label.setText(f"Error: {e}")
+            )
+
+            self._dl_thread.start()
 
         except Exception as e:
-            self.status_label.setText(f"Version lookup error: {e}")
-            return
+            self.status_label.setText(f"Dependency lookup error: {e}")
 
-        self.dl_progress.setVisible(True)
-        self.dl_progress.setValue(0)
+            if selected_card:
+                selected_card.reset_button("⬇ Download")
 
-        self._dl_thread = DownloadFileThread(version_id, mods_dir)
+    def _done(self, paths):
+        count = len(paths)
 
-        self._dl_thread.status.connect(self.status_label.setText)
-        self._dl_thread.progress.connect(
-            lambda downloaded, total: self.dl_progress.setValue(
-                int(downloaded / total * 100) if total else 0
+        if count == 1:
+            self.status_label.setText(
+                f"✅ Downloaded: {os.path.basename(paths[0])}"
             )
-        )
-        self._dl_thread.finished.connect(self._done)
-        self._dl_thread.error.connect(
-            lambda e: self.status_label.setText(f"Error: {e}")
-        )
+        else:
+            self.status_label.setText(
+                f"✅ Downloaded {count} file(s), including dependencies."
+            )
 
-        self._dl_thread.start()
-
-    def _done(self, path):
-        self.status_label.setText(f"✅ Downloaded: {os.path.basename(path)}")
         self.dl_progress.setValue(100)
         self.refresh_installed_mods()
 
